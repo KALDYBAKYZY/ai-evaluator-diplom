@@ -1,0 +1,241 @@
+Project ai_startup_evaluator {
+  database_type: 'PostgreSQL'
+  Note: 'AI Startup Evaluator — ER-модель MVP. Откройте на dbdiagram.io'
+}
+
+TableGroup lti_and_users {
+  lti_platform
+  user
+  course
+  enrollment
+  assignment
+}
+
+TableGroup projects_and_files {
+  project
+  team_member
+  submission
+  document
+  doc_chunk
+}
+
+TableGroup rubric {
+  rubric
+  criterion
+}
+
+TableGroup evaluation {
+  eval_run
+  criterion_score
+  evidence
+  teacher_review
+  expert_rating
+}
+
+TableGroup pitch_and_system {
+  pitch_session
+  pitch_stage
+  pitch_message
+  audit_log
+}
+
+Table lti_platform {
+  id uuid [pk]
+  name varchar
+  issuer varchar
+  client_id varchar
+  deployment_id varchar
+  auth_login_url varchar
+  auth_token_url varchar
+  jwks_url varchar
+  is_active boolean
+  indexes {
+    (issuer, client_id) [unique]
+  }
+}
+
+Table user {
+  id uuid [pk]
+  platform_id uuid [ref: > lti_platform.id]
+  lti_sub varchar
+  username varchar [unique]
+  first_name varchar
+  last_name varchar
+  email varchar
+}
+
+Table course {
+  id uuid [pk]
+  platform_id uuid [ref: > lti_platform.id]
+  lti_context_id varchar
+  title varchar
+}
+
+Table enrollment {
+  id uuid [pk]
+  user_id uuid [ref: > user.id]
+  course_id uuid [ref: > course.id]
+  role varchar [note: 'student | instructor | expert | admin']
+}
+
+Table assignment {
+  id uuid [pk]
+  course_id uuid [ref: > course.id]
+  rubric_id uuid [ref: > rubric.id]
+  lti_resource_link_id varchar
+  title varchar
+  due_at timestamp
+}
+
+Table project {
+  id uuid [pk]
+  course_id uuid [ref: > course.id]
+  title varchar
+  description text
+  data_source varchar [note: 'synthetic | educational | past_work']
+  consent_external_ai boolean
+  created_by uuid [ref: > user.id]
+}
+
+Table team_member {
+  id uuid [pk]
+  project_id uuid [ref: > project.id]
+  user_id uuid [ref: > user.id]
+}
+
+Table submission {
+  id uuid [pk]
+  project_id uuid [ref: > project.id]
+  assignment_id uuid [ref: > assignment.id]
+  version int
+  status varchar [note: 'uploaded | processing | ready | failed']
+  submitted_by uuid [ref: > user.id]
+}
+
+Table document {
+  id uuid [pk]
+  submission_id uuid [ref: > submission.id]
+  file varchar [note: 'ключ в хранилище S3/MinIO']
+  original_name varchar
+  file_type varchar [note: 'pdf | pptx']
+  size_bytes int
+  sha256 varchar
+}
+
+Table doc_chunk {
+  id bigint [pk]
+  document_id uuid [ref: > document.id]
+  slide_no int
+  content text
+}
+
+Table rubric {
+  id uuid [pk]
+  title varchar
+  version int
+  status varchar [note: 'draft | approved | archived']
+  approved_by uuid [ref: > user.id]
+}
+
+Table criterion {
+  id uuid [pk]
+  rubric_id uuid [ref: > rubric.id]
+  code varchar
+  name varchar
+  description text
+  weight decimal
+  agent_type varchar [note: 'market | business_model | finance | technology | innovation']
+  levels jsonb
+  order smallint
+}
+
+Table eval_run {
+  id uuid [pk]
+  submission_id uuid [ref: > submission.id]
+  rubric_id uuid [ref: > rubric.id]
+  mode varchar [note: 'multi_agent | single_ai']
+  status varchar
+  model_name varchar
+  prompt_version varchar
+  total_score decimal
+  duration_ms int
+  cost_usd decimal
+  requested_by uuid [ref: > user.id]
+}
+
+Table criterion_score {
+  id uuid [pk]
+  run_id uuid [ref: > eval_run.id]
+  criterion_id uuid [ref: > criterion.id]
+  agent_type varchar
+  ai_score smallint
+  teacher_score smallint
+  justification text
+  missing jsonb
+}
+
+Table evidence {
+  id bigint [pk]
+  score_id uuid [ref: > criterion_score.id]
+  chunk_id bigint [ref: > doc_chunk.id]
+  slide_no int
+  quote text
+  verified boolean
+}
+
+Table teacher_review {
+  id uuid [pk]
+  run_id uuid [ref: - eval_run.id, unique]
+  reviewer_id uuid [ref: > user.id]
+  final_score decimal
+  comment text
+  status varchar
+}
+
+Table expert_rating {
+  id uuid [pk]
+  submission_id uuid [ref: > submission.id]
+  criterion_id uuid [ref: > criterion.id]
+  expert_id uuid [ref: > user.id]
+  score smallint
+  comment text
+}
+
+Table pitch_session {
+  id uuid [pk]
+  submission_id uuid [ref: > submission.id]
+  student_id uuid [ref: > user.id]
+  model_name varchar
+  status varchar [note: 'created | pitch | qa | feedback | finished']
+  questions jsonb
+  feedback jsonb
+}
+
+Table pitch_stage {
+  id uuid [pk]
+  session_id uuid [ref: > pitch_session.id]
+  stage varchar
+  planned_sec int
+  started_at timestamp
+  ended_at timestamp
+  auto_ended boolean
+}
+
+Table pitch_message {
+  id uuid [pk]
+  session_id uuid [ref: > pitch_session.id]
+  stage varchar
+  speaker varchar [note: 'student | investor']
+  content text
+  offset_sec int
+}
+
+Table audit_log {
+  id bigint [pk]
+  user_id uuid [ref: > user.id]
+  action varchar
+  entity varchar
+  entity_id varchar
+  meta jsonb
+  created_at timestamp
+}
